@@ -130,5 +130,7 @@ bool AddonHandler::BuildAddonPacket(WorldPacket* source, WorldPacket* target)
         TC_LOG_ERROR("network", "Addon packet uncompress error :(");
         return false;
     }
+
+
     return true;
 }

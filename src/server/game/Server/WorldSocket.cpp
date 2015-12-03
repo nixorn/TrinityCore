@@ -385,12 +385,13 @@ void WorldSocket::HandleAuthSession(WorldPacket& recvPacket)
     recvPacket >> authSession->LoginServerID;
     recvPacket >> authSession->Account;
     recvPacket >> authSession->LoginServerType;
+    recvPacket.read(authSession->Digest, 20);
     recvPacket >> authSession->LocalChallenge;
     recvPacket >> authSession->RegionID;
     recvPacket >> authSession->BattlegroupID;
     recvPacket >> authSession->RealmID;               // realmId from auth_database.realmlist table
     recvPacket >> authSession->DosResponse;
-    recvPacket.read(authSession->Digest, 20);
+    
     authSession->AddonInfo.append(recvPacket.contents() + recvPacket.rpos(), recvPacket.size() - recvPacket.rpos());
 
     // Get the account information from the auth database
@@ -432,6 +433,8 @@ void WorldSocket::HandleAuthSessionCallback(std::shared_ptr<AuthSession> authSes
     // even if auth credentials are bad, try using the session key we have - client cannot read auth response error without it
     _authCrypt.Init(&account.SessionKey);
 
+    //FOR DELETING
+    
     // First reject the connection if packet contains invalid data or realm state doesn't allow logging in
     if (sWorld->IsClosed())
     {
@@ -441,13 +444,15 @@ void WorldSocket::HandleAuthSessionCallback(std::shared_ptr<AuthSession> authSes
         return;
     }
 
-    if (authSession->RealmID != realmID)
+    /*if (authSession->RealmID != realmID)
     {
         SendAuthResponseError(REALM_LIST_REALM_NOT_FOUND);
+	
         TC_LOG_ERROR("network", "WorldSocket::HandleAuthSession: Sent Auth Response (bad realm).");
+	TC_LOG_ERROR("network", "authSession->RealmID: %u, realmID: %u", authSession->RealmID, realmID);
         DelayedCloseSocket();
         return;
-    }
+	}*/
 
     // Must be done before WorldSession is created
     bool wardenActive = sWorld->getBoolConfig(CONFIG_WARDEN_ENABLED);
@@ -459,8 +464,11 @@ void WorldSocket::HandleAuthSessionCallback(std::shared_ptr<AuthSession> authSes
         return;
     }
 
+
+    // TODO_CLASSIC: make right authentification for worldserver
+    // now server just skip the auth
     // Check that Key and account name are the same on client and server
-    uint32 t = 0;
+    /*uint32 t = 0;
 
     SHA1Hash sha;
     sha.UpdateData(authSession->Account);
@@ -469,14 +477,16 @@ void WorldSocket::HandleAuthSessionCallback(std::shared_ptr<AuthSession> authSes
     sha.UpdateData((uint8*)&_authSeed, 4);
     sha.UpdateBigNumbers(&account.SessionKey, NULL);
     sha.Finalize();
-
+    // TODO: make right authentification for worldserver
+    // now server just skip the auth
     if (memcmp(sha.GetDigest(), authSession->Digest, SHA_DIGEST_LENGTH) != 0)
     {
         SendAuthResponseError(AUTH_FAILED);
         TC_LOG_ERROR("network", "WorldSocket::HandleAuthSession: Authentication failed for account: %u ('%s') address: %s", account.Id, authSession->Account.c_str(), address.c_str());
+	
         DelayedCloseSocket();
         return;
-    }
+	}*/
 
     ///- Re-check ip locking (same check as in auth).
     if (account.IsLockedToIP)

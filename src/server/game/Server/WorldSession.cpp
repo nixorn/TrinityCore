@@ -1053,8 +1053,9 @@ void WorldSession::SendAddonsInfo()
         0x0D, 0x36, 0xEA, 0x01, 0xE0, 0xAA, 0x91, 0x20, 0x54, 0xF0, 0x72, 0xD8, 0x1E, 0xC7, 0x89, 0xD2
     };
 
-    WorldPacket data(SMSG_ADDON_INFO, 4);
-
+    //TODO_CLASSIC: make ok addon handling, there is hardcoding
+    /*WorldPacket data(SMSG_ADDON_INFO, 4);
+    
     for (AddonsList::iterator itr = m_addonsList.begin(); itr != m_addonsList.end(); ++itr)
     {
         data << uint8(itr->State);
@@ -1077,6 +1078,7 @@ void WorldSession::SendAddonsInfo()
         }
 
         data << uint8(0);       // uses URL
+
         //if (usesURL)
         //    data << uint8(0); // URL
     }
@@ -1092,7 +1094,13 @@ void WorldSession::SendAddonsInfo()
         data.append(itr->VersionMD5, sizeof(itr->VersionMD5));
         data << uint32(itr->Timestamp);
         data << uint32(1);  // IsBanned
-    }
+	}*/
+
+    WorldPacket data(SMSG_ADDON_INFO, 4);
+    for (int counter = 0; counter < 12; counter++)
+      {
+	  data << uint8(2) << uint8(1) << uint32(0) << uint16(0);
+      }
 
     SendPacket(&data);
 }
