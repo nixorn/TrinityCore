@@ -73,7 +73,8 @@ void WorldSocket::CheckIpCallback(PreparedQueryResult result)
     }
 
     AsyncRead();
-    HandleSendAuthSession();
+    //HandleSendAuthSession();
+    HandleSendAuthSessionClassic();
 }
 
 bool WorldSocket::Update()
@@ -94,9 +95,18 @@ bool WorldSocket::Update()
     return true;
 }
 
+//different function for different classic auth
+void WorldSocket::HandleSendAuthSessionClassic()
+{
+  WorldPacket packet(SMSG_AUTH_CHALLENGE, 4);
+  packet << uint32(_authSeed);
+  SendPacketAndLogOpcode(packet);
+}
+
+
 void WorldSocket::HandleSendAuthSession()
 {
-    WorldPacket packet(SMSG_AUTH_CHALLENGE, 37);
+  WorldPacket packet(SMSG_AUTH_CHALLENGE, 37);
     packet << uint32(1);                                    // 1...31
     packet << uint32(_authSeed);
 
@@ -375,6 +385,66 @@ void WorldSocket::SendPacket(WorldPacket const& packet)
         QueuePacket(std::move(buffer), guard);
     }
 }
+
+
+
+//TODO_CLASSIC: this method added as experiment
+//maybe need to delete in the future
+void WorldSocket::SendPacketClassic(WorldPacket const& packet)
+{
+    if (!IsOpen())
+        return;
+
+    if (sPacketLog->CanLogPacket())
+        sPacketLog->LogPacket(packet, SERVER_TO_CLIENT, GetRemoteIpAddress(), GetRemotePort());
+
+    ServerPktHeader header(packet.size() + 2, packet.GetOpcode());
+
+    std::unique_lock<std::mutex> guard(_writeLock);
+
+    _authCrypt.EncryptSend(header.header, header.getHeaderLength());
+
+#ifndef TC_SOCKET_USE_IOCP
+    if (_writeQueue.empty() && _writeBuffer.GetRemainingSpace() >= header.getHeaderLength() + packet.size())
+    {
+        _writeBuffer.Write(header.header, header.getHeaderLength());
+        if (!packet.empty())
+            _writeBuffer.Write(packet.contents(), packet.size());
+    }
+    else
+#endif
+    {
+      //MessageBuffer buffer(header.getHeaderLength() + packet.size());
+      //buffer.Write(header.header, header.getHeaderLength());
+      //The only difference - dont send header
+      MessageBuffer buffer(packet.size());
+        if (!packet.empty())
+            buffer.Write(packet.contents(), packet.size());
+
+        QueuePacket(std::move(buffer), guard);
+    }
+}
+
+//TODO_CLASSIC: this method added as experiment
+//maybe need to delete in the future
+void WorldSocket::SendRawBytes(WorldPacket const& packet)
+{
+    if (!IsOpen())
+        return;
+
+    if (sPacketLog->CanLogPacket())
+        sPacketLog->LogPacket(packet, SERVER_TO_CLIENT, GetRemoteIpAddress(), GetRemotePort());
+
+    MessageBuffer buffer(packet.size());
+    if (!packet.empty())
+      buffer.Write(packet.contents(), packet.size());
+
+    std::unique_lock<std::mutex> guard(_writeLock);
+    
+    QueuePacket(std::move(buffer), guard);
+    
+}
+
 
 void WorldSocket::HandleAuthSession(WorldPacket& recvPacket)
 {

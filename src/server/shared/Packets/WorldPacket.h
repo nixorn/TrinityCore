@@ -21,6 +21,9 @@
 
 #include "Common.h"
 #include "ByteBuffer.h"
+#include "Log.h"
+
+
 
 class WorldPacket : public ByteBuffer
 {
@@ -28,16 +31,22 @@ class WorldPacket : public ByteBuffer
                                                             // just container for later use
         WorldPacket()                                       : ByteBuffer(0), m_opcode(0)
         {
+	  
         }
 
-        explicit WorldPacket(uint16 opcode, size_t res=200) : ByteBuffer(res), m_opcode(opcode) { }
+        explicit WorldPacket(uint16 opcode, size_t res=200) : ByteBuffer(res), m_opcode(opcode)
+        {
+	  TC_LOG_ERROR("packet", "Created packet opcode: %u" , opcode);
+        }
 
         WorldPacket(WorldPacket&& packet) : ByteBuffer(std::move(packet)), m_opcode(packet.m_opcode)
         {
+
         }
 
         WorldPacket(WorldPacket const& right) : ByteBuffer(right), m_opcode(right.m_opcode)
         {
+
         }
 
         WorldPacket& operator=(WorldPacket const& right)
@@ -58,6 +67,7 @@ class WorldPacket : public ByteBuffer
             clear();
             _storage.reserve(newres);
             m_opcode = opcode;
+	    TC_LOG_ERROR("packet", "Initialized packet opcode: %u" , opcode);
         }
 
         uint16 GetOpcode() const { return m_opcode; }

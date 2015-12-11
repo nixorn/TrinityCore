@@ -232,6 +232,97 @@ void WorldSession::SendPacket(WorldPacket* packet)
     m_Socket->SendPacket(*packet);
 }
 
+
+void WorldSession::SendPacketClassic(WorldPacket* packet)
+{
+    if (!m_Socket)
+        return;
+
+#ifdef TRINITY_DEBUG
+    // Code for network use statistic
+    static uint64 sendPacketCount = 0;
+    static uint64 sendPacketBytes = 0;
+
+    static time_t firstTime = time(NULL);
+    static time_t lastTime = firstTime;                     // next 60 secs start time
+
+    static uint64 sendLastPacketCount = 0;
+    static uint64 sendLastPacketBytes = 0;
+
+    time_t cur_time = time(NULL);
+
+    if ((cur_time - lastTime) < 60)
+    {
+        sendPacketCount+=1;
+        sendPacketBytes+=packet->size();
+
+        sendLastPacketCount+=1;
+        sendLastPacketBytes+=packet->size();
+    }
+    else
+    {
+        uint64 minTime = uint64(cur_time - lastTime);
+        uint64 fullTime = uint64(lastTime - firstTime);
+        TC_LOG_DEBUG("misc", "Send all time packets count: " UI64FMTD " bytes: " UI64FMTD " avr.count/sec: %f avr.bytes/sec: %f time: %u", sendPacketCount, sendPacketBytes, float(sendPacketCount)/fullTime, float(sendPacketBytes)/fullTime, uint32(fullTime));
+        TC_LOG_DEBUG("misc", "Send last min packets count: " UI64FMTD " bytes: " UI64FMTD " avr.count/sec: %f avr.bytes/sec: %f", sendLastPacketCount, sendLastPacketBytes, float(sendLastPacketCount)/minTime, float(sendLastPacketBytes)/minTime);
+
+        lastTime = cur_time;
+        sendLastPacketCount = 1;
+        sendLastPacketBytes = packet->wpos();               // wpos is real written size
+    }
+#endif                                                      // !TRINITY_DEBUG
+
+    sScriptMgr->OnPacketSend(this, *packet);
+
+    TC_LOG_TRACE("network.opcode", "S->C: %s %s", GetPlayerInfo().c_str(), GetOpcodeNameForLogging(packet->GetOpcode()).c_str());
+    m_Socket->SendPacketClassic(*packet);
+}
+
+void WorldSession::SendRawBytes(WorldPacket* packet)
+{
+    if (!m_Socket)
+        return;
+
+#ifdef TRINITY_DEBUG
+    // Code for network use statistic
+    static uint64 sendPacketCount = 0;
+    static uint64 sendPacketBytes = 0;
+
+    static time_t firstTime = time(NULL);
+    static time_t lastTime = firstTime;                     // next 60 secs start time
+
+    static uint64 sendLastPacketCount = 0;
+    static uint64 sendLastPacketBytes = 0;
+
+    time_t cur_time = time(NULL);
+
+    if ((cur_time - lastTime) < 60)
+    {
+        sendPacketCount+=1;
+        sendPacketBytes+=packet->size();
+
+        sendLastPacketCount+=1;
+        sendLastPacketBytes+=packet->size();
+    }
+    else
+    {
+        uint64 minTime = uint64(cur_time - lastTime);
+        uint64 fullTime = uint64(lastTime - firstTime);
+        TC_LOG_DEBUG("misc", "Send all time packets count: " UI64FMTD " bytes: " UI64FMTD " avr.count/sec: %f avr.bytes/sec: %f time: %u", sendPacketCount, sendPacketBytes, float(sendPacketCount)/fullTime, float(sendPacketBytes)/fullTime, uint32(fullTime));
+        TC_LOG_DEBUG("misc", "Send last min packets count: " UI64FMTD " bytes: " UI64FMTD " avr.count/sec: %f avr.bytes/sec: %f", sendLastPacketCount, sendLastPacketBytes, float(sendLastPacketCount)/minTime, float(sendLastPacketBytes)/minTime);
+
+        lastTime = cur_time;
+        sendLastPacketCount = 1;
+        sendLastPacketBytes = packet->wpos();               // wpos is real written size
+    }
+#endif                                                      // !TRINITY_DEBUG
+
+    sScriptMgr->OnPacketSend(this, *packet);
+
+    TC_LOG_TRACE("network.opcode", "S->C: %s %s", GetPlayerInfo().c_str(), GetOpcodeNameForLogging(packet->GetOpcode()).c_str());
+    m_Socket->SendRawBytes(*packet);
+}
+
 /// Add an incoming packet to the queue
 void WorldSession::QueuePacket(WorldPacket* new_packet)
 {
@@ -664,7 +755,8 @@ void WorldSession::SendAuthWaitQue(uint32 position)
     {
         WorldPacket packet(SMSG_AUTH_RESPONSE, 1);
         packet << uint8(AUTH_OK);
-        SendPacket(&packet);
+	SendPacket(&packet);
+        //SendRawBytes(&packet);
     }
     else
     {
@@ -672,7 +764,8 @@ void WorldSession::SendAuthWaitQue(uint32 position)
         packet << uint8(AUTH_WAIT_QUEUE);
         packet << uint32(position);
         packet << uint8(0);                                 // unk
-        SendPacket(&packet);
+	SendPacket(&packet);
+
     }
 }
 
@@ -764,10 +857,15 @@ void WorldSession::LoadTutorialsData(PreparedQueryResult result)
 
 void WorldSession::SendTutorialsData()
 {
-    WorldPacket data(SMSG_TUTORIAL_FLAGS, 4 * MAX_ACCOUNT_TUTORIAL_VALUES);
-    for (uint8 i = 0; i < MAX_ACCOUNT_TUTORIAL_VALUES; ++i)
-        data << m_Tutorials[i];
-    SendPacket(&data);
+
+  //does classic wow use "tutorials?
+  //WorldPacket data(SMSG_TUTORIAL_FLAGS, 4 * MAX_ACCOUNT_TUTORIAL_VALUES);
+  // for (uint8 i = 0; i < MAX_ACCOUNT_TUTORIAL_VALUES; ++i)
+  //    data << m_Tutorials[i];
+
+    
+
+    //SendPacket(&data);
 }
 
 void WorldSession::SaveTutorialsData(SQLTransaction &trans)
@@ -1053,12 +1151,21 @@ void WorldSession::SendAddonsInfo()
         0x0D, 0x36, 0xEA, 0x01, 0xE0, 0xAA, 0x91, 0x20, 0x54, 0xF0, 0x72, 0xD8, 0x1E, 0xC7, 0x89, 0xD2
     };
 
-    //TODO_CLASSIC: make ok addon handling, there is hardcoding
-    /*WorldPacket data(SMSG_ADDON_INFO, 4);
     
-    for (AddonsList::iterator itr = m_addonsList.begin(); itr != m_addonsList.end(); ++itr)
-    {
-        data << uint8(itr->State);
+
+    WorldPacket data;
+    data.Initialize(SMSG_ADDON_INFO);
+
+    //hardcoded values from network traffic of working server
+    //data << uint8(255);
+    //data << uint8(215);
+    //data << uint8(82);
+    //data << uint8(252);
+    //TODO_CLASSIC: in fact this commented lines are behavior of right addon handling
+    //for 3.3.5 client. Are we need something like for wow classic?
+    //for (AddonsList::iterator itr = m_addonsList.begin(); itr != m_addonsList.end(); ++itr)
+    //{
+      /*data << uint8(itr->State);
 
         uint8 crcpub = itr->UsePublicKeyOrCRC;
         data << uint8(crcpub);
@@ -1080,12 +1187,12 @@ void WorldSession::SendAddonsInfo()
         data << uint8(0);       // uses URL
 
         //if (usesURL)
-        //    data << uint8(0); // URL
-    }
+        //    data << uint8(0); // URL*/
+      //}
 
-    m_addonsList.clear();
+    //m_addonsList.clear();
 
-    AddonMgr::BannedAddonList const* bannedAddons = AddonMgr::GetBannedAddons();
+    /*AddonMgr::BannedAddonList const* bannedAddons = AddonMgr::GetBannedAddons();
     data << uint32(bannedAddons->size());
     for (AddonMgr::BannedAddonList::const_iterator itr = bannedAddons->begin(); itr != bannedAddons->end(); ++itr)
     {
@@ -1096,13 +1203,16 @@ void WorldSession::SendAddonsInfo()
         data << uint32(1);  // IsBanned
 	}*/
 
-    WorldPacket data(SMSG_ADDON_INFO, 4);
-    for (int counter = 0; counter < 12; counter++)
-      {
-	  data << uint8(2) << uint8(1) << uint32(0) << uint16(0);
-      }
+    for (int i=0; i < 12; i++){
+      data << uint8(2);
+      data << uint8(1);
+      data << uint16(0);
+      data << uint32(0);
+    }
+    //SendPacket(&data);
+    //SendRawBytes(&data);
+    SendPacketClassic(&data);
 
-    SendPacket(&data);
 }
 
 void WorldSession::SetPlayer(Player* player)
@@ -1292,6 +1402,7 @@ void WorldSession::InitializeSessionCallback(SQLQueryHolder* realmHolder)
     LoadAccountData(realmHolder->GetPreparedResult(AccountInfoQueryHolderPerRealm::GLOBAL_ACCOUNT_DATA), GLOBAL_CACHE_MASK);
     LoadTutorialsData(realmHolder->GetPreparedResult(AccountInfoQueryHolderPerRealm::TUTORIALS));
 
+    SendAddonsInfo();
     if (!m_inQueue)
         SendAuthResponse(AUTH_OK, true);
     else
@@ -1300,9 +1411,10 @@ void WorldSession::InitializeSessionCallback(SQLQueryHolder* realmHolder)
     SetInQueue(false);
     ResetTimeOutTime();
 
-    SendAddonsInfo();
-    SendClientCacheVersion(sWorld->getIntConfig(CONFIG_CLIENTCACHE_VERSION));
-    SendTutorialsData();
+
+    //TODO_CLASSIC: make sure that SendClientCacheVersion and SendTutorialsData dont need in classic
+    //SendClientCacheVersion(sWorld->getIntConfig(CONFIG_CLIENTCACHE_VERSION));
+    //SendTutorialsData();
 
     delete realmHolder;
 }

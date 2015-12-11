@@ -61,6 +61,8 @@ public:
     bool Update() override;
 
     void SendPacket(WorldPacket const& packet);
+    void SendRawBytes(WorldPacket const& packet);
+    void SendPacketClassic(WorldPacket const& packet);
 
 protected:
     void OnClose() override;
@@ -85,6 +87,7 @@ private:
     /// sends and logs network.opcode without accessing WorldSession
     void SendPacketAndLogOpcode(WorldPacket const& packet);
     void HandleSendAuthSession();
+    void HandleSendAuthSessionClassic();
     void HandleAuthSession(WorldPacket& recvPacket);
     void HandleAuthSessionCallback(std::shared_ptr<AuthSession> authSession, PreparedQueryResult result);
     void LoadSessionPermissionsCallback(PreparedQueryResult result);
