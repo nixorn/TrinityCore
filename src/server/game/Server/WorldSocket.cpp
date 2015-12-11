@@ -22,6 +22,7 @@
 #include "ScriptMgr.h"
 #include "SHA1.h"
 #include "PacketLog.h"
+#include "ByteConverter.h"
 
 #include <memory>
 
@@ -100,7 +101,8 @@ void WorldSocket::HandleSendAuthSessionClassic()
 {
   WorldPacket packet(SMSG_AUTH_CHALLENGE, 4);
   packet << uint32(_authSeed);
-  SendPacketAndLogOpcode(packet);
+  //SendPacketAndLogOpcode(packet);
+  SendPacketClassic(packet);
 }
 
 
@@ -397,32 +399,30 @@ void WorldSocket::SendPacketClassic(WorldPacket const& packet)
 
     if (sPacketLog->CanLogPacket())
         sPacketLog->LogPacket(packet, SERVER_TO_CLIENT, GetRemoteIpAddress(), GetRemotePort());
-
-    ServerPktHeader header(packet.size() + 2, packet.GetOpcode());
-
+    
+    ServerPktHeaderClassic header;
+    header.size = (uint16) packet.size() + 2;
+    header.cmd =  packet.GetOpcode();
+    
+    EndianConvertReverse(header.size);
+    EndianConvert(header.cmd);
+    
     std::unique_lock<std::mutex> guard(_writeLock);
 
-    _authCrypt.EncryptSend(header.header, header.getHeaderLength());
+    
+    _authCrypt.EncryptSend((uint8*) & header, sizeof(header));
+    
 
-#ifndef TC_SOCKET_USE_IOCP
-    if (_writeQueue.empty() && _writeBuffer.GetRemainingSpace() >= header.getHeaderLength() + packet.size())
-    {
-        _writeBuffer.Write(header.header, header.getHeaderLength());
-        if (!packet.empty())
-            _writeBuffer.Write(packet.contents(), packet.size());
-    }
-    else
-#endif
-    {
-      //MessageBuffer buffer(header.getHeaderLength() + packet.size());
-      //buffer.Write(header.header, header.getHeaderLength());
-      //The only difference - dont send header
-      MessageBuffer buffer(packet.size());
-        if (!packet.empty())
-            buffer.Write(packet.contents(), packet.size());
+    MessageBuffer buffer(sizeof(header) + packet.size());
+    buffer.Write(&header, sizeof(header));
+    buffer.Write(packet.contents(), packet.size());
+    
+    //MessageBuffer buffer(packet.size());
+    //if (!packet.empty())
+    //buffer.Write(packet.contents(), packet.size());
+    
+    QueuePacket(std::move(buffer), guard);
 
-        QueuePacket(std::move(buffer), guard);
-    }
 }
 
 //TODO_CLASSIC: this method added as experiment

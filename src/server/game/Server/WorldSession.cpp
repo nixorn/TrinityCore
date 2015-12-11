@@ -660,8 +660,8 @@ void WorldSession::LogoutPlayer(bool save)
         //! Send the 'logout complete' packet to the client
         //! Client will respond by sending 3x CMSG_CANCEL_TRADE, which we currently dont handle
         WorldPacket data(SMSG_LOGOUT_COMPLETE, 0);
-        SendPacket(&data);
-        TC_LOG_DEBUG("network", "SESSION: Sent SMSG_LOGOUT_COMPLETE Message");
+        SendPacket(&data); 
+       TC_LOG_DEBUG("network", "SESSION: Sent SMSG_LOGOUT_COMPLETE Message");
 
         //! Since each account can only have one online character at any given time, ensure all characters for active account are marked as offline
         PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_ACCOUNT_ONLINE);
@@ -751,11 +751,14 @@ void WorldSession::Handle_Deprecated(WorldPacket& recvPacket)
 
 void WorldSession::SendAuthWaitQue(uint32 position)
 {
-    if (position == 0)
+
+
+  if (position == 0)
     {
         WorldPacket packet(SMSG_AUTH_RESPONSE, 1);
         packet << uint8(AUTH_OK);
-	SendPacket(&packet);
+	SendPacketClassic(&packet);
+	//SendPacket(&packet);
         //SendRawBytes(&packet);
     }
     else
@@ -764,8 +767,8 @@ void WorldSession::SendAuthWaitQue(uint32 position)
         packet << uint8(AUTH_WAIT_QUEUE);
         packet << uint32(position);
         packet << uint8(0);                                 // unk
-	SendPacket(&packet);
-
+	//SendPacket(&packet);
+	SendPacketClassic(&packet);
     }
 }
 
@@ -1403,10 +1406,13 @@ void WorldSession::InitializeSessionCallback(SQLQueryHolder* realmHolder)
     LoadTutorialsData(realmHolder->GetPreparedResult(AccountInfoQueryHolderPerRealm::TUTORIALS));
 
     SendAddonsInfo();
+    
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
     if (!m_inQueue)
         SendAuthResponse(AUTH_OK, true);
     else
         SendAuthWaitQue(0);
+
 
     SetInQueue(false);
     ResetTimeOutTime();

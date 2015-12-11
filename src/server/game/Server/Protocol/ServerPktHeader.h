@@ -23,6 +23,13 @@
 
 #pragma pack(push, 1)
 
+
+struct ServerPktHeaderClassic
+{
+    uint16 size;
+    uint16 cmd;
+};
+
 struct ServerPktHeader
 {
     /**
