@@ -34,8 +34,8 @@ void WorldSession::SendAuthResponse(uint8 code, bool shortForm, uint32 queuePos)
         packet << uint32(queuePos);                             // Queue position
         packet << uint8(0);                                     // Realm has a free character migration - bool
     }
-
-    SendPacket(&packet);
+    SendPacketClassic(&packet);
+    //SendPacket(&packet);
 }
 
 void WorldSession::SendClientCacheVersion(uint32 version)

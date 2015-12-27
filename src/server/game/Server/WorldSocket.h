@@ -20,6 +20,8 @@
 #define __WORLDSOCKET_H__
 
 #include "Common.h"
+#include "AuthClassic/Sha1Classic.h"
+#include "AuthClassic/AuthCryptClassic.h"
 #include "AuthCrypt.h"
 #include "ServerPktHeader.h"
 #include "Socket.h"
@@ -97,6 +99,7 @@ private:
 
     uint32 _authSeed;
     AuthCrypt _authCrypt;
+    AuthCryptClassic m_Crypt;
 
     std::chrono::steady_clock::time_point _LastPingTime;
     uint32 _OverSpeedPings;

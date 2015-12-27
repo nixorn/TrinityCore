@@ -18,11 +18,14 @@
 
 #include "WorldSocket.h"
 #include "BigNumber.h"
+#include "BigNumberClassic.h"
 #include "Opcodes.h"
 #include "ScriptMgr.h"
 #include "SHA1.h"
+
 #include "PacketLog.h"
 #include "ByteConverter.h"
+
 
 #include <memory>
 
@@ -32,6 +35,40 @@ WorldSocket::WorldSocket(tcp::socket&& socket)
     : Socket(std::move(socket)), _authSeed(rand32()), _OverSpeedPings(0), _worldSession(nullptr), _authed(false)
 {
     _headerBuffer.Resize(sizeof(ClientPktHeader));
+
+    //TO_DELETE: testing how crypto works
+    AuthCryptClassic m_CryptTest;
+    Sha1HashClassic sha11;
+
+    std::string account_test = "ADMIN";
+    BigNumberClassic K_test;
+    ServerPktHeaderClassic header_test;
+    uint32 t_test          = 0;
+    uint32 seed_test       = (uint32) 100500;
+    uint32 clientSeed_test = (uint32) 100500;
+
+    header_test.cmd = (uint16) 10;
+    header_test.size = (uint16) 40;
+
+    K_test.SetHexStr("a34b29541b87b7e4823683ce6c7bf6ae68beaaac");
+    sha11.UpdateData(account_test);
+    sha11.UpdateData((uint8*) & t_test, 4);
+    sha11.UpdateData((uint8*) & clientSeed_test, 4);
+    sha11.UpdateData((uint8*) & seed_test, 4);
+    sha11.UpdateBigNumbers(&K_test, NULL);
+    sha11.Finalize();
+    //m_CryptTest.DecryptRecv((uint8*) m_Header.rd_ptr(), sizeof(ClientPktHeader));
+
+    m_CryptTest.SetKey(K_test.AsByteArray(), 40);
+    m_CryptTest.Init();
+
+    TC_LOG_ERROR("network", "WorldSocket::HEADER_BEFORE = %d , cmd = %d",
+                 header_test.size, header_test.cmd);
+    m_CryptTest.EncryptSend((uint8*) & header_test, sizeof(header_test));
+    TC_LOG_ERROR("network", "WorldSocket::HEADER_AFTER = %d , cmd = %d",
+                 header_test.size, header_test.cmd);
+
+
 }
 
 void WorldSocket::Start()
@@ -196,7 +233,9 @@ bool WorldSocket::ReadHeaderHandler()
 {
     ASSERT(_headerBuffer.GetActiveSize() == sizeof(ClientPktHeader));
 
-    _authCrypt.DecryptRecv(_headerBuffer.GetReadPointer(), sizeof(ClientPktHeader));
+    //_authCrypt.DecryptRecv(_headerBuffer.GetReadPointer(), sizeof(ClientPktHeader));
+    //TODO_CLASSIC: replace authcrypt
+    m_Crypt.DecryptRecv(_headerBuffer.GetReadPointer(), sizeof(ClientPktHeader));
 
     ClientPktHeader* header = reinterpret_cast<ClientPktHeader*>(_headerBuffer.GetReadPointer());
     EndianConvertReverse(header->size);
@@ -220,6 +259,7 @@ struct AuthSession
     uint32 LoginServerType = 0;
     uint32 RealmID = 0;
     uint32 Build = 0;
+    uint32 ClientSeed = 0;
     uint32 LocalChallenge = 0;
     uint32 LoginServerID = 0;
     uint32 RegionID = 0;
@@ -244,13 +284,15 @@ struct AccountInfo
     bool IsRectuiter;
     AccountTypes Security;
     bool IsBanned;
+    std::string v;
+    std::string s;
 
     explicit AccountInfo(Field* fields)
     {
         //           0             1          2         3               4            5           6         7            8     9         10
         // SELECT a.id, a.sessionkey, a.last_ip, a.locked, a.lock_country, a.expansion, a.mutetime, a.locale, a.recruiter, a.os, aa.gmLevel,
-        //                                                           11    12
-        // ab.unbandate > UNIX_TIMESTAMP() OR ab.unbandate = ab.bandate, r.id
+        //                                                           11    12   13   14
+        // ab.unbandate > UNIX_TIMESTAMP() OR ab.unbandate = ab.bandate, r.id, a.v, a.s
         // FROM account a
         // LEFT JOIN account_access aa ON a.id = aa.id AND aa.RealmID IN (-1, ?)
         // LEFT JOIN account_banned ab ON a.id = ab.id
@@ -269,6 +311,8 @@ struct AccountInfo
         Security = AccountTypes(fields[10].GetUInt8());
         IsBanned = fields[11].GetUInt64() != 0;
         IsRectuiter = fields[12].GetUInt32() != 0;
+        v = fields[13].GetString();
+        s = fields[14].GetString();
 
         uint32 world_expansion = sWorld->getIntConfig(CONFIG_EXPANSION);
         if (Expansion > world_expansion)
@@ -369,6 +413,7 @@ void WorldSocket::SendPacket(WorldPacket const& packet)
 
     _authCrypt.EncryptSend(header.header, header.getHeaderLength());
 
+
 #ifndef TC_SOCKET_USE_IOCP
     if (_writeQueue.empty() && _writeBuffer.GetRemainingSpace() >= header.getHeaderLength() + packet.size())
     {
@@ -401,48 +446,27 @@ void WorldSocket::SendPacketClassic(WorldPacket const& packet)
         sPacketLog->LogPacket(packet, SERVER_TO_CLIENT, GetRemoteIpAddress(), GetRemotePort());
     
     ServerPktHeaderClassic header;
-    header.size = (uint16) packet.size() + 2;
+
     header.cmd =  packet.GetOpcode();
-    
+    header.size = (uint16) packet.size() + 2;
+
     EndianConvertReverse(header.size);
     EndianConvert(header.cmd);
     
     std::unique_lock<std::mutex> guard(_writeLock);
 
     
-    _authCrypt.EncryptSend((uint8*) & header, sizeof(header));
-    
+    //_authCrypt.EncryptSend((uint8*) & header, sizeof(header));
+    m_Crypt.EncryptSend((uint8*) & header, sizeof(header));
 
     MessageBuffer buffer(sizeof(header) + packet.size());
     buffer.Write(&header, sizeof(header));
-    buffer.Write(packet.contents(), packet.size());
-    
-    //MessageBuffer buffer(packet.size());
-    //if (!packet.empty())
-    //buffer.Write(packet.contents(), packet.size());
-    
-    QueuePacket(std::move(buffer), guard);
-
-}
-
-//TODO_CLASSIC: this method added as experiment
-//maybe need to delete in the future
-void WorldSocket::SendRawBytes(WorldPacket const& packet)
-{
-    if (!IsOpen())
-        return;
-
-    if (sPacketLog->CanLogPacket())
-        sPacketLog->LogPacket(packet, SERVER_TO_CLIENT, GetRemoteIpAddress(), GetRemotePort());
-
-    MessageBuffer buffer(packet.size());
     if (!packet.empty())
-      buffer.Write(packet.contents(), packet.size());
+        buffer.Write(packet.contents(), packet.size());
 
-    std::unique_lock<std::mutex> guard(_writeLock);
-    
+
     QueuePacket(std::move(buffer), guard);
-    
+
 }
 
 
@@ -454,7 +478,7 @@ void WorldSocket::HandleAuthSession(WorldPacket& recvPacket)
     recvPacket >> authSession->Build;
     recvPacket >> authSession->LoginServerID;
     recvPacket >> authSession->Account;
-    recvPacket >> authSession->LoginServerType;
+    recvPacket >> authSession->ClientSeed;
     recvPacket.read(authSession->Digest, 20);
     recvPacket >> authSession->LocalChallenge;
     recvPacket >> authSession->RegionID;
@@ -503,8 +527,15 @@ void WorldSocket::HandleAuthSessionCallback(std::shared_ptr<AuthSession> authSes
     // even if auth credentials are bad, try using the session key we have - client cannot read auth response error without it
     _authCrypt.Init(&account.SessionKey);
 
-    //FOR DELETING
-    
+    Sha1HashClassic sha1;
+    BigNumberClassic K;
+    WorldPacket packet, SendAddonPacked;
+
+    K.SetHexStr(account.SessionKey.AsHexStr());
+
+    m_Crypt.SetKey(K.AsByteArray(),40);
+    m_Crypt.Init();
+
     // First reject the connection if packet contains invalid data or realm state doesn't allow logging in
     if (sWorld->IsClosed())
     {
@@ -515,14 +546,14 @@ void WorldSocket::HandleAuthSessionCallback(std::shared_ptr<AuthSession> authSes
     }
 
     /*if (authSession->RealmID != realmID)
-    {
-        SendAuthResponseError(REALM_LIST_REALM_NOT_FOUND);
+      {
+      SendAuthResponseError(REALM_LIST_REALM_NOT_FOUND);
 	
-        TC_LOG_ERROR("network", "WorldSocket::HandleAuthSession: Sent Auth Response (bad realm).");
-	TC_LOG_ERROR("network", "authSession->RealmID: %u, realmID: %u", authSession->RealmID, realmID);
-        DelayedCloseSocket();
-        return;
-	}*/
+      TC_LOG_ERROR("network", "WorldSocket::HandleAuthSession: Sent Auth Response (bad realm).");
+      TC_LOG_ERROR("network", "authSession->RealmID: %u, realmID: %u", authSession->RealmID, realmID);
+      DelayedCloseSocket();
+      return;
+      }*/
 
     // Must be done before WorldSession is created
     bool wardenActive = sWorld->getBoolConfig(CONFIG_WARDEN_ENABLED);
@@ -540,23 +571,23 @@ void WorldSocket::HandleAuthSessionCallback(std::shared_ptr<AuthSession> authSes
     // Check that Key and account name are the same on client and server
     /*uint32 t = 0;
 
-    SHA1Hash sha;
-    sha.UpdateData(authSession->Account);
-    sha.UpdateData((uint8*)&t, 4);
-    sha.UpdateData((uint8*)&authSession->LocalChallenge, 4);
-    sha.UpdateData((uint8*)&_authSeed, 4);
-    sha.UpdateBigNumbers(&account.SessionKey, NULL);
-    sha.Finalize();
-    // TODO: make right authentification for worldserver
-    // now server just skip the auth
-    if (memcmp(sha.GetDigest(), authSession->Digest, SHA_DIGEST_LENGTH) != 0)
-    {
-        SendAuthResponseError(AUTH_FAILED);
-        TC_LOG_ERROR("network", "WorldSocket::HandleAuthSession: Authentication failed for account: %u ('%s') address: %s", account.Id, authSession->Account.c_str(), address.c_str());
+      SHA1Hash sha;
+      sha.UpdateData(authSession->Account);
+      sha.UpdateData((uint8*)&t, 4);
+      sha.UpdateData((uint8*)&authSession->LocalChallenge, 4);
+      sha.UpdateData((uint8*)&_authSeed, 4);
+      sha.UpdateBigNumbers(&account.SessionKey, NULL);
+      sha.Finalize();
+      // TODO: make right authentification for worldserver
+      // now server just skip the auth
+      if (memcmp(sha.GetDigest(), authSession->Digest, SHA_DIGEST_LENGTH) != 0)
+      {
+      SendAuthResponseError(AUTH_FAILED);
+      TC_LOG_ERROR("network", "WorldSocket::HandleAuthSession: Authentication failed for account: %u ('%s') address: %s", account.Id, authSession->Account.c_str(), address.c_str());
 	
-        DelayedCloseSocket();
-        return;
-	}*/
+      DelayedCloseSocket();
+      return;
+      }*/
 
     ///- Re-check ip locking (same check as in auth).
     if (account.IsLockedToIP)
@@ -632,7 +663,7 @@ void WorldSocket::HandleAuthSessionCallback(std::shared_ptr<AuthSession> authSes
 
     _authed = true;
     _worldSession = new WorldSession(account.Id, std::move(authSession->Account), shared_from_this(), account.Security,
-        account.Expansion, mutetime, account.Locale, account.Recruiter, account.IsRectuiter);
+                                     account.Expansion, mutetime, account.Locale, account.Recruiter, account.IsRectuiter);
     _worldSession->ReadAddonsInfo(authSession->AddonInfo);
 
     // Initialize Warden system only if it is enabled by config
@@ -644,13 +675,13 @@ void WorldSocket::HandleAuthSessionCallback(std::shared_ptr<AuthSession> authSes
     AsyncRead();
 }
 
-void WorldSocket::LoadSessionPermissionsCallback(PreparedQueryResult result)
-{
-    // RBAC must be loaded before adding session to check for skip queue permission
-    _worldSession->GetRBACData()->LoadFromDBCallback(result);
+void WorldSocket:: LoadSessionPermissionsCallback (PreparedQueryResult result)
+    {
+        // RBAC must be loaded before adding session to check for skip queue permission
+        _worldSession->GetRBACData()->LoadFromDBCallback(result);
 
-    sWorld->AddSession(_worldSession);
-}
+        sWorld->AddSession(_worldSession);
+    }
 
 void WorldSocket::SendAuthResponseError(uint8 code)
 {
